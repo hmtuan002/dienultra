@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Đồng hồ điện</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      flex-direction: column;
+    }
+    #number {
+      font-size: 64px;
+      font-weight: bold;
+      color: #2c3e50;
+    }
+    .unit {
+      font-size: 32px;
+      color: #27ae60;
+    }
+  </style>
+</head>
+<body>
+  <div id="number">34755.6 <span class="unit">kWh</span></div>
+
+  <script>
+    let currentValue = 34755.6;
+
+    function updateNumber() {
+      // Tăng số ngẫu nhiên từ 0.1 đến 1.0
+      const increment = Math.random() * (1 - 0.1) + 0.1;
+      currentValue += increment;
+
+      // Làm tròn đến 1 chữ số thập phân
+      const rounded = currentValue.toFixed(1);
+
+      document.getElementById("number").innerHTML = `${rounded} <span class="unit">kWh</span>`;
+    }
+
+    // Cập nhật mỗi 60 giây (60 * 1000 ms)
+    setInterval(updateNumber, 60000);
+  </script>
+</body>
+</html>
