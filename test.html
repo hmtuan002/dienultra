@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen Sharing App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .video-container {
+            flex: 1;
+            min-width: 300px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        video {
+            width: 100%;
+            background-color: #000;
+        }
+        .controls {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        button {
+            padding: 8px 15px;
+            margin-right: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #roomId {
+            padding: 8px;
+            width: 200px;
+        }
+        .status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Screen Sharing Application</h1>
+    
+    <div class="controls">
+        <input type="text" id="roomId" placeholder="Enter room ID">
+        <button id="createBtn">Create Room</button>
+        <button id="joinBtn">Join Room</button>
+        <button id="shareBtn" disabled>Share My Screen</button>
+        <button id="stopBtn" disabled>Stop Sharing</button>
+        <div class="status" id="status">Not connected</div>
+    </div>
+    
+    <div class="container">
+        <div class="video-container">
+            <h3>Your Screen</h3>
+            <video id="localVideo" autoplay muted></video>
+        </div>
+        <div class="video-container">
+            <h3>Remote Screen</h3>
+            <video id="remoteVideo" autoplay></video>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const createBtn = document.getElementById('createBtn');
+        const joinBtn = document.getElementById('joinBtn');
+        const shareBtn = document.getElementById('shareBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const roomIdInput = document.getElementById('roomId');
+        const statusDiv = document.getElementById('status');
+        
+        // WebRTC variables
+        let localStream;
+        let peerConnection;
+        let roomId;
+        let isInitiator = false;
+        
+        // Signaling server simulation (using simple peer-to-peer for demo)
+        // In a real app, you'd use a proper signaling server (Socket.io, etc.)
+        const signalingChannel = {
+            send: (data) => {
+                // In a real app, this would send data to the signaling server
+                console.log('Signaling send:', data);
+                if (window.receiveSignalingMessage) {
+                    setTimeout(() => window.receiveSignalingMessage(data), 100);
+                }
+            }
+        };
+        
+        // For demo purposes, we'll simulate the signaling channel
+        window.receiveSignalingMessage = null;
+        
+        // Generate a random room ID if empty
+        function generateRoomId() {
+            return Math.random().toString(36).substring(2, 8);
+        }
+        
+        // Create or join a room
+        createBtn.addEventListener('click', () => {
+            roomId = roomIdInput.value || generateRoomId();
+            roomIdInput.value = roomId;
+            isInitiator = true;
+            statusDiv.textContent = `Created room: ${roomId}. Waiting for peer...`;
+            shareBtn.disabled = false;
+            setupSignaling();
+        });
+        
+        joinBtn.addEventListener('click', () => {
+            roomId = roomIdInput.value;
+            if (!roomId) {
+                alert('Please enter a room ID');
+                return;
+            }
+            isInitiator = false;
+            statusDiv.textContent = `Joining room: ${roomId}`;
+            shareBtn.disabled = false;
+            setupSignaling();
+        });
+        
+        // Share screen button
+        shareBtn.addEventListener('click', () => {
+            startScreenShare();
+        });
+        
+        // Stop sharing button
+        stopBtn.addEventListener('click', () => {
+            stopScreenShare();
+        });
+        
+        // Setup signaling (simulated for this demo)
+        function setupSignaling() {
+            window.receiveSignalingMessage = (data) => {
+                if (data.roomId !== roomId) return;
+                
+                if (data.type === 'offer') {
+                    handleOffer(data);
+                } else if (data.type === 'answer') {
+                    handleAnswer(data);
+                } else if (data.type === 'candidate') {
+                    handleCandidate(data);
+                } else if (data.type === 'ready') {
+                    statusDiv.textContent = `Connected to room: ${roomId}`;
+                    if (isInitiator) {
+                        startScreenShare();
+                    }
+                }
+            };
+            
+            // Simulate the other peer joining
+            if (isInitiator) {
+                signalingChannel.send({ roomId, type: 'ready' });
+            }
+        }
+        
+        // Start screen sharing
+        async function startScreenShare() {
+            try {
+                statusDiv.textContent = 'Getting screen capture...';
+                localStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: false
+                });
+                
+                localVideo.srcObject = localStream;
+                shareBtn.disabled = true;
+                stopBtn.disabled = false;
+                
+                setupPeerConnection();
+                
+                if (isInitiator) {
+                    statusDiv.textContent = 'Screen sharing started. Waiting for peer...';
+                } else {
+                    statusDiv.textContent = 'Screen sharing started. Connected.';
+                }
+            } catch (err) {
+                console.error('Error sharing screen:', err);
+                statusDiv.textContent = 'Error sharing screen: ' + err.message;
+            }
+        }
+        
+        // Stop screen sharing
+        function stopScreenShare() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localVideo.srcObject = null;
+                localStream = null;
+            }
+            
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            
+            shareBtn.disabled = false;
+            stopBtn.disabled = true;
+            statusDiv.textContent = isInitiator ? 
+                `Room ${roomId} active. Screen not shared.` : 
+                `Joined room ${roomId}. Screen not shared.`;
+        }
+        
+        // Setup peer connection
+        function setupPeerConnection() {
+            peerConnection = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+            
+            // Add local stream to connection
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+            
+            // When remote stream arrives, show it in remote video
+            peerConnection.ontrack = (event) => {
+                remoteVideo.srcObject = event.streams[0];
+                statusDiv.textContent = `Connected in room: ${roomId}`;
+            };
+            
+            // ICE candidate handler
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    signalingChannel.send({
+                        roomId,
+                        type: 'candidate',
+                        candidate: event.candidate
+                    });
+                }
+            };
+            
+            // If initiator, create offer
+            if (isInitiator) {
+                peerConnection.createOffer()
+                    .then(offer => peerConnection.setLocalDescription(offer))
+                    .then(() => {
+                        signalingChannel.send({
+                            roomId,
+                            type: 'offer',
+                            sdp: peerConnection.localDescription
+                        });
+                    })
+                    .catch(err => {
+                        console.error('Error creating offer:', err);
+                        statusDiv.textContent = 'Error creating offer: ' + err.message;
+                    });
+            }
+        }
+        
+        // Handle incoming offer
+        function handleOffer(data) {
+            if (!isInitiator && !peerConnection) {
+                peerConnection = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+                
+                peerConnection.ontrack = (event) => {
+                    remoteVideo.srcObject = event.streams[0];
+                    statusDiv.textContent = `Connected in room: ${roomId}`;
+                };
+                
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        signalingChannel.send({
+                            roomId,
+                            type: 'candidate',
+                            candidate: event.candidate
+                        });
+                    }
+                };
+                
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data))
+                    .then(() => peerConnection.createAnswer())
+                    .then(answer => peerConnection.setLocalDescription(answer))
+                    .then(() => {
+                        signalingChannel.send({
+                            roomId,
+                            type: 'answer',
+                            sdp: peerConnection.localDescription
+                        });
+                    })
+                    .catch(err => {
+                        console.error('Error handling offer:', err);
+                        statusDiv.textContent = 'Error handling offer: ' + err.message;
+                    });
+            }
+        }
+        
+        // Handle incoming answer
+        function handleAnswer(data) {
+            if (isInitiator && peerConnection) {
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data))
+                    .catch(err => {
+                        console.error('Error setting remote description:', err);
+                        statusDiv.textContent = 'Error setting remote description: ' + err.message;
+                    });
+            }
+        }
+        
+        // Handle incoming ICE candidate
+        function handleCandidate(data) {
+            if (peerConnection) {
+                peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
+                    .catch(err => {
+                        console.error('Error adding ICE candidate:', err);
+                        statusDiv.textContent = 'Error adding ICE candidate: ' + err.message;
+                    });
+            }
+        }
+    </script>
+</body>
+</html>
